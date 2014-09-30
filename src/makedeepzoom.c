@@ -1,3 +1,27 @@
+/*
+ * The MIT License (MIT)
+ *
+ * Copyright (c) 2014 Joe Sortelli
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -73,7 +97,7 @@ char *OPT_DZC     = NULL;
 char *OPT_SOURCE  = NULL;
 
 void usage(void) {
-  fprintf(stderr, "usage: " PROGNAME 
+  fprintf(stderr, "usage: " PROGNAME
                   " [OPTIONS] [-c dzc_dir -n dzc_num] -i dzi_dir -s source_image \n");
 }
 
@@ -96,7 +120,7 @@ int main(int argc, char **argv) {
       case 'h':
         usage();
         exit(0);
-  
+
       default:
         usage();
         exit(1);
@@ -267,7 +291,7 @@ DZI *dzi_new(char *source, char *files_path, int tile_size, int overlap, char *f
 
   dzi->tile_size = tile_size;
   dzi->overlap   = overlap;
-  
+
   if (!(dzi->format = strdup(format)))
     error("strdup() failed, reason: %s\n", strerror(errno));
 
@@ -357,7 +381,7 @@ void debug(char *fmt, ...) {
   va_list args;
 
   if (OPT_DEBUG) {
-    va_start(args, fmt);  
+    va_start(args, fmt);
     vfprintf(stderr, fmt, args);
     va_end(args);
   }
@@ -366,7 +390,7 @@ void debug(char *fmt, ...) {
 void _error(long  line, char *fmt, ...) {
   va_list args;
 
-  va_start(args, fmt);  
+  va_start(args, fmt);
   fprintf(stderr, "%s, error on line %ld: ", PROGNAME, line);
   vfprintf(stderr, fmt, args);
   fprintf(stderr, "\n");
@@ -380,7 +404,7 @@ void _wand_error(long line, MagickWand *wand) {
   ExceptionType type;
 
   msg = MagickGetException(wand, &type); \
-  
+
   _error(line, "MagickWand error: %s", msg);
 }
 
