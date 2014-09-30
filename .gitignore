@@ -1,0 +1,11 @@
+*.swp
+Makefile
+config.h
+config.log
+config.status
+libtool
+src/.deps/
+src/Makefile
+src/makedeepzoom
+src/makedeepzoom.o
+stamp-h1
