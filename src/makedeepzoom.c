@@ -212,7 +212,7 @@ DZC *dzc_new(char *xml_path, int tile_size, char *format, int max_levels) {
   if (!(dzc->files_path = malloc(len)))
     error("malloc() failed, reason: %s\n", strerror(errno));
 
-  if (q = strchr(p, '.'))
+  if ((q = strchr(p, '.')))
     *q = '\0';
 
   snprintf(dzc->files_path, len, "%s%s", dzc->xml_path, sfx);
@@ -267,7 +267,7 @@ void dzc_start_update(DZC *dzc) {
 void dzc_add_dzi(DZC *dzc, DZI *dzi) {
   fprintf(dzc->tmp, " <I Id=\"%d\" N=\"%d\" Source=\"%s\">\n",
           dzc->next_item, dzc->next_item, dzi->xml_path);
-  fprintf(dzc->tmp, "  <Size Width=\"%d\" Height=\"%d\" />\n",
+  fprintf(dzc->tmp, "  <Size Width=\"%zu\" Height=\"%zu\" />\n",
           dzi->width, dzi->height);
   fprintf(dzc->tmp, " </I>\n");
 
@@ -379,7 +379,7 @@ DZI *dzi_new(char *source, char *out_dir, int tile_size, int overlap, char *form
   if (!(dzi->files_path = malloc(len_dir)))
     error("malloc() failed, reason: %s\n", strerror(errno));
 
-  if (q = strchr(p, '.'))
+  if ((q = strchr(p, '.')))
     *q = '\0';
 
   snprintf(dzi->xml_path,   len_dzi, "%s/%s%s", out_dir, p, sfx_dzi);
@@ -522,7 +522,7 @@ void dzi_make_xml(DZI *dzi) {
   fprintf(f, "<Image xmlns=\"http://schemas.microsoft.com/deepzoom/2008\"");
   fprintf(f, " TileSize=\"%d\" Overlap=\"%d\" Format=\"%s\">\n",
               dzi->tile_size, dzi->overlap, dzi->format);
-  fprintf(f, "  <Size Width=\"%d\" Height=\"%d\"/>\n", dzi->width, dzi->height);
+  fprintf(f, "  <Size Width=\"%zu\" Height=\"%zu\"/>\n", dzi->width, dzi->height);
   fprintf(f, "</Image>\n");
 
   fclose(f);
