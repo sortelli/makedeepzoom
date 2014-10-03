@@ -33,8 +33,8 @@
 #include <sys/types.h>
 #include <wand/MagickWand.h>
 
-#define PROGNAME  "makedeepzoom"
-#define DIR_MODE  S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH
+#define DIR_MODE    S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH
+#define DZI_DIR_SFX "_files"
 
 #define error(fmt, ...) _error(__LINE__, fmt, __VA_ARGS__)
 #define wand_error(wand) _wand_error(__LINE__, wand)
@@ -47,6 +47,7 @@ void debug(char *fmt, ...);
 typedef struct {
   char  *format;
   char  *source;
+  char  *xml_path;
   char  *files_path;
   size_t width;
   size_t height;
@@ -61,21 +62,26 @@ typedef struct {
 
 typedef struct {
   char *format;
+  char *xml_path;
   char *files_path;
   int   levels;
   int   tile_size;
+  int   next_item;
   int   morton_row;
   int   morton_col;
+  FILE *tmp;
 } DZC;
 
-DZI *dzi_new(char *source, char *files_path, int tile_size, int overlap, char *format);
+DZI *dzi_new(char *source, char *out_dir, int tile_size, int overlap, char *format);
 void dzi_destory(DZI *dzi);
 void dzi_make_tiles(DZI *dzi, DZC *dzc);
+void dzi_make_xml(DZI *dzi);
 void dzi_reduce(DZI *dzi);
 
-DZC *dzc_new(char *files_path, int dzc_num, int tile_size, char *format, int max_levels);
-void dzc_make_dirs(DZC *dzc);
-void dzc_make_tiles(DZC *dzc, DZI *dzi);
+DZC *dzc_new(char *xml_path, int tile_size, char *format, int max_levels);
+void dzc_start_update(DZC *dzc);
+void dzc_add_dzi(DZC *dzc, DZI *dzi);
+void dzc_save(DZC *dzc);
 void dzc_destory(DZC *dzc);
 
 char *basename(char *path);
@@ -88,32 +94,39 @@ int dzi_zoom_depth(int width, int height);
 int OPT_DEBUG     = 0;
 int OPT_XML_EXT   = 0;
 int OPT_DZC_DEPTH = 8;
-int OPT_DZC_NUM   = 0;
-int OPT_TILE_SIZE = 256;
+int OPT_DZC_START = 0;
+int OPT_TILE_SIZE = 254;
 int OPT_OVERLAP   = 1;
 char *OPT_FORMAT  = "jpg";
-char *OPT_DZI     = NULL;
 char *OPT_DZC     = NULL;
-char *OPT_SOURCE  = NULL;
+
+char *APP_NAME = NULL;
+
+void set_app_name(char *argv0) {
+  APP_NAME = argv0;
+
+  if (APP_NAME && (argv0 = strrchr(APP_NAME, '/')))
+    APP_NAME = argv0 + 1;
+}
 
 void usage(void) {
-  fprintf(stderr, "usage: " PROGNAME
-                  " [OPTIONS] [-c dzc_dir -n dzc_num] -i dzi_dir -s source_image \n");
+  fprintf(stderr, "usage: %s [OPTIONS] [image, image, ...] \n", APP_NAME);
 }
 
 int main(int argc, char **argv) {
   int opt;
   DZC *dzc = NULL;
 
-  while ((opt = getopt(argc, argv, "dc:i:s:t:f:n:m:o:")) != -1) {
+  set_app_name(*argv);
+
+  while ((opt = getopt(argc, argv, "xdc:t:f:n:m:o:")) != -1) {
     switch(opt) {
+      case 'x': OPT_XML_EXT   = 1;            break;
       case 'd': OPT_DEBUG     = 1;            break;
       case 'c': OPT_DZC       = optarg;       break;
-      case 'i': OPT_DZI       = optarg;       break;
-      case 's': OPT_SOURCE    = optarg;       break;
       case 't': OPT_TILE_SIZE = atoi(optarg); break;
       case 'f': OPT_FORMAT    = optarg;       break;
-      case 'n': OPT_DZC_NUM   = atoi(optarg); break;
+      case 'n': OPT_DZC_START = atoi(optarg); break;
       case 'm': OPT_DZC_DEPTH = atoi(optarg); break;
       case 'o': OPT_OVERLAP   = atoi(optarg); break;
 
@@ -127,58 +140,90 @@ int main(int argc, char **argv) {
     }
   }
 
-  debug("OPT_DEBUG     = %d\n", OPT_DEBUG);
-  debug("OPT_TILE_SIZE = %d\n", OPT_TILE_SIZE);
-  debug("OPT_DZC_NUM   = %d\n", OPT_DZC_NUM);
-  debug("OPT_DZC_DEPTH = %d\n", OPT_DZC_DEPTH);
-  debug("OPT_OVERLAP   = %d\n", OPT_OVERLAP);
-  debug("OPT_DZC       = %s\n", OPT_DZC    ? OPT_DZC    : "(NULL)");
-  debug("OPT_DZI       = %s\n", OPT_DZI    ? OPT_DZI    : "(NULL)");
-  debug("OPT_SOURCE    = %s\n", OPT_SOURCE ? OPT_SOURCE : "(NULL)");
-  debug("OPT_FORMAT    = %s\n", OPT_FORMAT ? OPT_FORMAT : "(NULL)");
+  debug(
+    "OPT_XML_EXT   = %d\n"
+    "OPT_DEBUG     = %d\n"
+    "OPT_TILE_SIZE = %d\n"
+    "OPT_DZC_START = %d\n"
+    "OPT_DZC_DEPTH = %d\n"
+    "OPT_OVERLAP   = %d\n"
+    "OPT_DZC       = %s\n"
+    "OPT_FORMAT    = %s\n",
+    OPT_XML_EXT,   OPT_DEBUG,     OPT_TILE_SIZE,
+    OPT_DZC_START, OPT_DZC_DEPTH, OPT_OVERLAP,
+    OPT_DZC    ? OPT_DZC    : "(NULL)",
+    OPT_FORMAT ? OPT_FORMAT : "(NULL)"
+  );
 
-  if (!OPT_DZI || !OPT_SOURCE) {
-    usage();
-    exit(0);
-  }
 
   MagickWandGenesis();
 
   if (OPT_DZC) {
-    dzc = dzc_new(OPT_DZC, OPT_DZC_NUM, 256, OPT_FORMAT, OPT_DZC_DEPTH);
-    dzc_make_dirs(dzc);
+    dzc = dzc_new(OPT_DZC, 256, OPT_FORMAT, OPT_DZC_DEPTH);
+    dzc_start_update(dzc);
   }
 
-  DZI *dzi = dzi_new(OPT_SOURCE, OPT_DZI, OPT_TILE_SIZE, OPT_OVERLAP, OPT_FORMAT);
-  dzi_make_tiles(dzi, dzc);
-  dzi_destory(dzi);
+  for (; optind < argc; ++optind) {
+    DZI *dzi = dzi_new(argv[optind], NULL, OPT_TILE_SIZE, OPT_OVERLAP, OPT_FORMAT);
 
-  if (dzc)
+    dzi_make_tiles(dzi, dzc);
+    dzi_make_xml(dzi);
+
+    dzi_destory(dzi);
+  }
+
+  if (dzc) {
+    dzc_save(dzc);
     dzc_destory(dzc);
+  }
 
   MagickWandTerminus();
 
   return 0;
 }
 
-DZC *dzc_new(char *files_path, int dzc_num, int tile_size, char *format, int max_levels) {
+char *basename(char *path) {
+  char *p;
+
+  return (p = strrchr(path, '/')) ? p + 1 : path;
+}
+
+DZC *dzc_new(char *xml_path, int tile_size, char *format, int max_levels) {
   DZC *dzc;
+  char *p, *q;
+  char *sfx = DZI_DIR_SFX;
+  size_t len;
 
   if (!(dzc = malloc(sizeof(DZC))))
     error("malloc() failed, reason: %s\n", strerror(errno));
 
-  if (!(dzc->files_path = strdup(files_path)))
+  if (!(dzc->xml_path = strdup(xml_path)))
     error("strdup() failed, reason: %s\n", strerror(errno));
 
-  if (!(dzc->format = strdup(format)))
-    error("strdup() failed, reason: %s\n", strerror(errno));
+  p = basename(dzc->xml_path);
+
+  len = strlen(dzc->xml_path) + strlen(sfx) + 1;
+
+  if (!(dzc->files_path = malloc(len)))
+    error("malloc() failed, reason: %s\n", strerror(errno));
+
+  if (q = strchr(p, '.'))
+    *q = '\0';
+
+  snprintf(dzc->files_path, len, "%s%s", dzc->xml_path, sfx);
+
+  if (q)
+    *q = '.';
 
   dzc->tile_size  = tile_size;
   dzc->levels     = max_levels;
+  dzc->tmp        = NULL;
+  dzc->next_item  = 0;
   dzc->morton_row = 0;
   dzc->morton_col = 0;
 
-  morton(dzc_num, &(dzc->morton_row), &(dzc->morton_col));
+  if (!(dzc->format = strdup(format)))
+    error("strdup() failed, reason: %s\n", strerror(errno));
 
   return dzc;
 }
@@ -188,14 +233,23 @@ void dzc_destory(DZC *dzc) {
     return;
 
   if (dzc->format)     free(dzc->format);
+  if (dzc->xml_path)   free(dzc->xml_path);
   if (dzc->files_path) free(dzc->files_path);
+
+  if (dzc->tmp)
+    fclose(dzc->tmp);
 
   free(dzc);
 }
 
-void dzc_make_dirs(DZC *dzc) {
+void dzc_start_update(DZC *dzc) {
   char dir[1024];
   int i;
+
+  if (!(dzc->tmp = tmpfile()))
+    error("tmpfile() failed, reason: %s\n", strerror(errno));
+
+  dzc->next_item = OPT_DZC_START;
 
   make_dir(dzc->files_path);
 
@@ -203,6 +257,18 @@ void dzc_make_dirs(DZC *dzc) {
     snprintf(dir, sizeof dir, "%s/%d", dzc->files_path, i);
     make_dir(dir);
   }
+}
+
+void dzc_add_dzi(DZC *dzc, DZI *dzi) {
+  fprintf(dzc->tmp, " <I Id=\"%d\" N=\"%d\" Source=\"%s\">\n",
+          dzc->next_item, dzc->next_item, dzi->xml_path);
+  fprintf(dzc->tmp, "  <Size Width=\"%d\" Height=\"%d\" />\n",
+          dzi->width, dzi->height);
+  fprintf(dzc->tmp, " </I>\n");
+
+  morton(dzc->next_item, &(dzc->morton_row), &(dzc->morton_col));
+
+  dzc->next_item++;
 }
 
 void dzc_make_tiles(DZC *dzc, DZI *dzi) {
@@ -248,12 +314,47 @@ void dzc_make_tiles(DZC *dzc, DZI *dzi) {
 
   CHECK_WAND(wand, MagickCompositeImage(wand, dzi->wand, OverCompositeOp, x, y));
   CHECK_WAND(wand, MagickWriteImage(wand, file));
-
-  DestroyMagickWand(wand);
 }
 
-DZI *dzi_new(char *source, char *files_path, int tile_size, int overlap, char *format) {
+void dzc_save(DZC *dzc) {
+  FILE *f;
+  char buf[8192];
+
+  debug("writing %s\n", dzc->xml_path);
+
+  if (!(f = fopen(dzc->xml_path, "w")))
+    error("fopen(\"%s\") failed, reason: %s\n", dzc->xml_path, strerror(errno));
+
+  fprintf(f, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+  fprintf(f, "<Collection MaxLevel=\"%d\" TileSize=\"%d\" "
+             "Format=\"%s\" NextItemId=\"%d\">\n",
+             dzc->levels, dzc->tile_size, dzc->format, dzc->next_item);
+  fprintf(f, "<Items>\n");
+
+  fflush(dzc->tmp);
+  fseek(dzc->tmp, 0, SEEK_SET);
+
+  while (fgets(buf, sizeof buf, dzc->tmp))
+    fputs(buf, f);
+
+  fclose(dzc->tmp);
+  dzc->tmp = NULL;
+
+  fprintf(f, "</Items>\n");
+  fprintf(f, "</Collection>\n");
+
+  fclose(f);
+}
+
+DZI *dzi_new(char *source, char *out_dir, int tile_size, int overlap, char *format) {
   DZI *dzi;
+  char *p, *q;
+  char *sfx_dir = DZI_DIR_SFX;
+  char *sfx_dzi = OPT_XML_EXT ? ".xml" : ".dzi";
+  size_t len_dir, len_dzi;
+
+  if (!out_dir)
+    out_dir = ".";
 
   if (!(dzi = malloc(sizeof(DZI))))
     error("malloc() failed, reason: %s\n", strerror(errno));
@@ -261,23 +362,30 @@ DZI *dzi_new(char *source, char *files_path, int tile_size, int overlap, char *f
   if (!(dzi->source = strdup(source)))
     error("strdup() failed, reason: %s\n", strerror(errno));
 
-  if (!(dzi->files_path = strdup(files_path)))
-    error("strdup() failed, reason: %s\n", strerror(errno));
+  p = basename(dzi->source);
+
+  len_dzi = strlen(out_dir) + strlen(p) + strlen(sfx_dzi) + 2;
+  if (!(dzi->xml_path = malloc(len_dzi)))
+    error("malloc() failed, reason: %s\n", strerror(errno));
+
+  len_dir = strlen(out_dir) + strlen(p) + strlen(sfx_dir) + 2;
+  if (!(dzi->files_path = malloc(len_dir)))
+    error("malloc() failed, reason: %s\n", strerror(errno));
+
+  if (q = strchr(p, '.'))
+    *q = '\0';
+
+  snprintf(dzi->xml_path,   len_dzi, "%s/%s%s", out_dir, p, sfx_dzi);
+  snprintf(dzi->files_path, len_dir, "%s/%s%s", out_dir, p, sfx_dir);
+
+  if (q)
+    *q = '.';
 
   dzi->height = dzi->width = dzi->levels = 0;
 
   dzi->wand = NewMagickWand();
 
-
-  if (!strcmp(dzi->source, "-")) {
-    debug("reading from stdin");
-    CHECK_WAND(dzi->wand, MagickReadImageFile(dzi->wand, stdin));
-  }
-  else {
-    debug("reading from %s", dzi->source);
-    CHECK_WAND(dzi->wand, MagickReadImage(dzi->wand, dzi->source));
-  }
-
+  CHECK_WAND(dzi->wand, MagickReadImage(dzi->wand, dzi->source));
   CHECK_WAND(dzi->wand, MagickSetImageFormat(dzi->wand, OPT_FORMAT));
 
   debug("read image %s\n", MagickGetImageFilename(dzi->wand));
@@ -304,6 +412,7 @@ void dzi_destory(DZI *dzi) {
 
   if (dzi->source)     free(dzi->source);
   if (dzi->format)     free(dzi->format);
+  if (dzi->xml_path)   free(dzi->xml_path);
   if (dzi->files_path) free(dzi->files_path);
   if (dzi->wand)       DestroyMagickWand(dzi->wand);
 
@@ -332,11 +441,13 @@ void dzi_save_tile(DZI *dzi, size_t x, size_t y, size_t w, size_t h, char *file)
 }
 
 void dzi_make_tiles(DZI *dzi, DZC *dzc) {
+  if (dzc)
+    dzc_add_dzi(dzc, dzi);
+
   make_dir(dzi->files_path);
 
   for (dzi->cur_level = dzi->levels; dzi->cur_level >= 0; dzi->cur_level -= 1) {
-    int x, y, c, r;
-    int pt, pr, pb, pl;
+    int x, y, c, r, h, w;
     char dir[1024];
     char file[1536];
 
@@ -354,19 +465,16 @@ void dzi_make_tiles(DZI *dzi, DZC *dzc) {
       while (y < dzi->cur_height) {
         snprintf(file, sizeof file, "%s/%d_%d.%s", dir, c, r, dzi->format);
 
-        pt = y > 0;
-        pr = ((c + 1) * dzi->tile_size) < dzi->cur_width;
-        pb = ((r + 1) * dzi->tile_size) < dzi->cur_height;
-        pl = x > 0;
+        w = (x > 0) ? dzi->tile_size + (2 * dzi->overlap) : dzi->tile_size + dzi->overlap;
+        h = (y > 0) ? dzi->tile_size + (2 * dzi->overlap) : dzi->tile_size + dzi->overlap;
 
-        dzi_save_tile(dzi, x - pl, y - pt, dzi->tile_size + pr + pl,
-                                           dzi->tile_size + pb + pt, file);
+        dzi_save_tile(dzi, x, y, w, h, file);
 
-        y += dzi->tile_size;
+        y += (h - (2 * dzi->overlap));
         ++r;
       }
 
-      x += dzi->tile_size;
+      x += (w - (2 * dzi->overlap));
       ++c;
     }
 
@@ -375,6 +483,24 @@ void dzi_make_tiles(DZI *dzi, DZC *dzc) {
 
     dzi_reduce(dzi);
   }
+}
+
+void dzi_make_xml(DZI *dzi) {
+  FILE *f;
+
+  debug("writing %s\n", dzi->xml_path);
+
+  if (!(f = fopen(dzi->xml_path, "w")))
+    error("fopen(\"%s\") failed, reason: %s\n", dzi->xml_path, strerror(errno));
+
+  fprintf(f, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+  fprintf(f, "<Image xmlns=\"http://schemas.microsoft.com/deepzoom/2008\"");
+  fprintf(f, " TileSize=\"%d\" Overlap=\"%d\" Format=\"%s\">\n",
+              dzi->tile_size, dzi->overlap, dzi->format);
+  fprintf(f, "  <Size Width=\"%d\" Height=\"%d\"/>\n", dzi->width, dzi->height);
+  fprintf(f, "</Image>\n");
+
+  fclose(f);
 }
 
 void debug(char *fmt, ...) {
@@ -391,7 +517,7 @@ void _error(long  line, char *fmt, ...) {
   va_list args;
 
   va_start(args, fmt);
-  fprintf(stderr, "%s, error on line %ld: ", PROGNAME, line);
+  fprintf(stderr, "%s, error on line %ld: ", APP_NAME, line);
   vfprintf(stderr, fmt, args);
   fprintf(stderr, "\n");
   va_end(args);
@@ -411,7 +537,7 @@ void _wand_error(long line, MagickWand *wand) {
 int dzi_zoom_depth(int width, int height) {
   int x = width > height ? width : height;
 
-  return ceil(log2(x));
+  return ceil(log(x) / log(2));
 }
 
 void morton(int n, int *row, int *col) {
