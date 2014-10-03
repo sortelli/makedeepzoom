@@ -36,13 +36,14 @@
 #define DIR_MODE    S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH
 #define DZI_DIR_SFX "_files"
 
+#define debug(fmt, ...) if (OPT_DEBUG) _debug(fmt, __VA_ARGS__)
 #define error(fmt, ...) _error(__LINE__, fmt, __VA_ARGS__)
 #define wand_error(wand) _wand_error(__LINE__, wand)
 #define CHECK_WAND(wand, x) if (x == MagickFalse) wand_error(wand)
 
 void _wand_error(long line, MagickWand *wand);
 void _error(long  line, char *fmt, ...);
-void debug(char *fmt, ...);
+void _debug(char *fmt, ...);
 
 typedef struct {
   char  *format;
@@ -144,22 +145,15 @@ int main(int argc, char **argv) {
     }
   }
 
-  debug(
-    "OPT_XML_EXT   = %d\n"
-    "OPT_DEBUG     = %d\n"
-    "OPT_TILE_SIZE = %d\n"
-    "OPT_DZC_START = %d\n"
-    "OPT_DZC_DEPTH = %d\n"
-    "OPT_OVERLAP   = %d\n"
-    "OPT_DZC       = %s\n"
-    "OPT_FORMAT    = %s\n"
-    "OPT_ASPECT    = %.3f\n",
-    OPT_XML_EXT,   OPT_DEBUG,     OPT_TILE_SIZE,
-    OPT_DZC_START, OPT_DZC_DEPTH, OPT_OVERLAP,
-    OPT_DZC    ? OPT_DZC    : "(NULL)",
-    OPT_FORMAT ? OPT_FORMAT : "(NULL)",
-    OPT_ASPECT
-  );
+  debug("OPT_XML_EXT   = %d\n",   OPT_XML_EXT);
+  debug("OPT_DEBUG     = %d\n",   OPT_DEBUG);
+  debug("OPT_TILE_SIZE = %d\n",   OPT_TILE_SIZE);
+  debug("OPT_DZC_START = %d\n",   OPT_DZC_START);
+  debug("OPT_DZC_DEPTH = %d\n",   OPT_DZC_DEPTH);
+  debug("OPT_OVERLAP   = %d\n",   OPT_OVERLAP);
+  debug("OPT_DZC       = %s\n",   OPT_DZC    ? OPT_DZC    : "(NULL)");
+  debug("OPT_FORMAT    = %s\n",   OPT_FORMAT ? OPT_FORMAT : "(NULL)");
+  debug("OPT_ASPECT    = %.3f\n", OPT_ASPECT);
 
   MagickWandGenesis();
 
@@ -487,10 +481,8 @@ void dzi_make_tiles(DZI *dzi, DZC *dzc) {
         pb = ((r + 1) * dzi->tile_size) < dzi->cur_height;
         pl = x > 0;
 
-/*
         debug("tile %d_%d: [%d, %d, %d, %d], [%d, %d, %d, %d]\n", c, r, pt, pr, pb, pl,
                        x - pl, y - pt, dzi->tile_size + pr + pl, dzi->tile_size + pb + pt);
-*/
 
         dzi_save_tile(dzi, x - pl, y - pt, dzi->tile_size + pr + pl,
                                            dzi->tile_size + pb + pt, file);
@@ -528,14 +520,12 @@ void dzi_make_xml(DZI *dzi) {
   fclose(f);
 }
 
-void debug(char *fmt, ...) {
+void _debug(char *fmt, ...) {
   va_list args;
 
-  if (OPT_DEBUG) {
-    va_start(args, fmt);
-    vfprintf(stderr, fmt, args);
-    va_end(args);
-  }
+  va_start(args, fmt);
+  vfprintf(stderr, fmt, args);
+  va_end(args);
 }
 
 void _error(long  line, char *fmt, ...) {
