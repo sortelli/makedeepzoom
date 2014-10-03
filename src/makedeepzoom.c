@@ -91,12 +91,15 @@ void morton(int n, int *row, int *col);
 char *dzi_dir(char *dzi_file);
 int dzi_zoom_depth(int width, int height);
 
+void change_aspect(double aspect, MagickWand *wand);
+
 int OPT_DEBUG     = 0;
 int OPT_XML_EXT   = 0;
 int OPT_DZC_DEPTH = 8;
 int OPT_DZC_START = 0;
-int OPT_TILE_SIZE = 254;
+int OPT_TILE_SIZE = 256;
 int OPT_OVERLAP   = 1;
+double OPT_ASPECT = 0;
 char *OPT_FORMAT  = "jpg";
 char *OPT_DZC     = NULL;
 
@@ -119,12 +122,13 @@ int main(int argc, char **argv) {
 
   set_app_name(*argv);
 
-  while ((opt = getopt(argc, argv, "xdc:t:f:n:m:o:")) != -1) {
+  while ((opt = getopt(argc, argv, "xdc:t:a:f:n:m:o:")) != -1) {
     switch(opt) {
       case 'x': OPT_XML_EXT   = 1;            break;
       case 'd': OPT_DEBUG     = 1;            break;
       case 'c': OPT_DZC       = optarg;       break;
       case 't': OPT_TILE_SIZE = atoi(optarg); break;
+      case 'a': OPT_ASPECT    = atof(optarg); break;
       case 'f': OPT_FORMAT    = optarg;       break;
       case 'n': OPT_DZC_START = atoi(optarg); break;
       case 'm': OPT_DZC_DEPTH = atoi(optarg); break;
@@ -148,13 +152,14 @@ int main(int argc, char **argv) {
     "OPT_DZC_DEPTH = %d\n"
     "OPT_OVERLAP   = %d\n"
     "OPT_DZC       = %s\n"
-    "OPT_FORMAT    = %s\n",
+    "OPT_FORMAT    = %s\n"
+    "OPT_ASPECT    = %.3f\n",
     OPT_XML_EXT,   OPT_DEBUG,     OPT_TILE_SIZE,
     OPT_DZC_START, OPT_DZC_DEPTH, OPT_OVERLAP,
     OPT_DZC    ? OPT_DZC    : "(NULL)",
-    OPT_FORMAT ? OPT_FORMAT : "(NULL)"
+    OPT_FORMAT ? OPT_FORMAT : "(NULL)",
+    OPT_ASPECT
   );
-
 
   MagickWandGenesis();
 
@@ -314,6 +319,8 @@ void dzc_make_tiles(DZC *dzc, DZI *dzi) {
 
   CHECK_WAND(wand, MagickCompositeImage(wand, dzi->wand, OverCompositeOp, x, y));
   CHECK_WAND(wand, MagickWriteImage(wand, file));
+
+  DestroyMagickWand(wand);
 }
 
 void dzc_save(DZC *dzc) {
@@ -395,6 +402,15 @@ DZI *dzi_new(char *source, char *out_dir, int tile_size, int overlap, char *form
 
   debug("image is %dx%d\n", dzi->width, dzi->height);
 
+  if (OPT_ASPECT > 0) {
+    change_aspect(OPT_ASPECT, dzi->wand);
+
+    dzi->cur_width  = dzi->width  = MagickGetImageWidth(dzi->wand);
+    dzi->cur_height = dzi->height = MagickGetImageHeight(dzi->wand);
+
+    debug("image is %dx%d\n", dzi->width, dzi->height);
+  }
+
   dzi->cur_level = dzi->levels = dzi_zoom_depth(dzi->width, dzi->height);
 
   dzi->tile_size = tile_size;
@@ -447,7 +463,8 @@ void dzi_make_tiles(DZI *dzi, DZC *dzc) {
   make_dir(dzi->files_path);
 
   for (dzi->cur_level = dzi->levels; dzi->cur_level >= 0; dzi->cur_level -= 1) {
-    int x, y, c, r, h, w;
+    int x, y, c, r;
+    int pt, pr, pb, pl;
     char dir[1024];
     char file[1536];
 
@@ -465,16 +482,24 @@ void dzi_make_tiles(DZI *dzi, DZC *dzc) {
       while (y < dzi->cur_height) {
         snprintf(file, sizeof file, "%s/%d_%d.%s", dir, c, r, dzi->format);
 
-        w = (x > 0) ? dzi->tile_size + (2 * dzi->overlap) : dzi->tile_size + dzi->overlap;
-        h = (y > 0) ? dzi->tile_size + (2 * dzi->overlap) : dzi->tile_size + dzi->overlap;
+        pt = y > 0;
+        pr = ((c + 1) * dzi->tile_size) < dzi->cur_width;
+        pb = ((r + 1) * dzi->tile_size) < dzi->cur_height;
+        pl = x > 0;
 
-        dzi_save_tile(dzi, x, y, w, h, file);
+/*
+        debug("tile %d_%d: [%d, %d, %d, %d], [%d, %d, %d, %d]\n", c, r, pt, pr, pb, pl,
+                       x - pl, y - pt, dzi->tile_size + pr + pl, dzi->tile_size + pb + pt);
+*/
 
-        y += (h - (2 * dzi->overlap));
+        dzi_save_tile(dzi, x - pl, y - pt, dzi->tile_size + pr + pl,
+                                           dzi->tile_size + pb + pt, file);
+
+        y += dzi->tile_size;
         ++r;
       }
 
-      x += (w - (2 * dzi->overlap));
+      x += dzi->tile_size;
       ++c;
     }
 
@@ -537,7 +562,7 @@ void _wand_error(long line, MagickWand *wand) {
 int dzi_zoom_depth(int width, int height) {
   int x = width > height ? width : height;
 
-  return ceil(log(x) / log(2));
+  return ceil(log2(x));
 }
 
 void morton(int n, int *row, int *col) {
@@ -560,4 +585,36 @@ void morton(int n, int *row, int *col) {
 void make_dir(char *dir) {
   if (mkdir(dir, DIR_MODE) && errno != EEXIST)
     error("mkdir(\"%s\") failed, reason: %s", dir, strerror(errno));
+}
+
+void change_aspect(double aspect, MagickWand *wand) {
+  size_t w, h, nw, nh, bw, bh;
+  double cur_aspect;
+  PixelWand *bg;
+
+  bg = NewPixelWand();
+
+  PixelSetColor(bg, "black");
+
+  w = MagickGetImageWidth(wand);
+  h = MagickGetImageHeight(wand);
+
+  cur_aspect = (double) w / h;
+
+  nw = w;
+  nh = h;
+
+  if (cur_aspect < aspect)
+    nw  = lrint(h * aspect);
+  else
+    nh = lrint(w / aspect);
+
+  bw = (nw - w) / 2;
+  bh = (nh - h) / 2;
+
+  debug("aspect ratio is %.2f should be %.2f, adding border %dx%d\n", cur_aspect, aspect, bw, bh);
+
+  CHECK_WAND(wand, MagickFrameImage(wand, bg, (nw - w) / 2, (nh - h) / 2, 0, 0));
+
+  DestroyPixelWand(bg);
 }
