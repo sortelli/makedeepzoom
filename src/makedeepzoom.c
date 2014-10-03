@@ -206,7 +206,7 @@ DZC *dzc_new(char *xml_path, int tile_size, char *format, int max_levels) {
   if (!(dzc->files_path = malloc(len)))
     error("malloc() failed, reason: %s\n", strerror(errno));
 
-  if ((q = strchr(p, '.')))
+  if ((q = strrchr(p, '.')))
     *q = '\0';
 
   snprintf(dzc->files_path, len, "%s%s", dzc->xml_path, sfx);
@@ -373,7 +373,7 @@ DZI *dzi_new(char *source, char *out_dir, int tile_size, int overlap, char *form
   if (!(dzi->files_path = malloc(len_dir)))
     error("malloc() failed, reason: %s\n", strerror(errno));
 
-  if ((q = strchr(p, '.')))
+  if ((q = strrchr(p, '.')))
     *q = '\0';
 
   snprintf(dzi->xml_path,   len_dzi, "%s/%s%s", out_dir, p, sfx_dzi);
