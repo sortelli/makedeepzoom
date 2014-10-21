@@ -176,6 +176,11 @@ int main(int argc, char **argv) {
   debug("OPT_FORMAT      = %s\n",   OPT_FORMAT ? OPT_FORMAT : "(NULL)");
   debug("OPT_ASPECT      = %.3f\n", OPT_ASPECT);
 
+  if (optind >= argc) {
+    usage();
+    exit(1);
+  }
+
   MagickWandGenesis();
 
   if (OPT_DZC) {
