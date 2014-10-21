@@ -363,6 +363,9 @@ DZI *dzi_new(char *source, char *out_dir, int tile_size, int overlap, char *form
   if (!(dzi->source = strdup(source)))
     error("strdup() failed, reason: %s\n", strerror(errno));
 
+  if (!(dzi->format = strdup(format)))
+    error("strdup() failed, reason: %s\n", strerror(errno));
+
   p = basename(dzi->source);
 
   len_dzi = strlen(out_dir) + strlen(p) + strlen(sfx_dzi) + 2;
@@ -387,7 +390,7 @@ DZI *dzi_new(char *source, char *out_dir, int tile_size, int overlap, char *form
   dzi->wand = NewMagickWand();
 
   CHECK_WAND(dzi->wand, MagickReadImage(dzi->wand, dzi->source));
-  CHECK_WAND(dzi->wand, MagickSetImageFormat(dzi->wand, OPT_FORMAT));
+  CHECK_WAND(dzi->wand, MagickSetImageFormat(dzi->wand, dzi->format));
 
   debug("read image %s\n", MagickGetImageFilename(dzi->wand));
 
@@ -409,9 +412,6 @@ DZI *dzi_new(char *source, char *out_dir, int tile_size, int overlap, char *form
 
   dzi->tile_size = tile_size;
   dzi->overlap   = overlap;
-
-  if (!(dzi->format = strdup(format)))
-    error("strdup() failed, reason: %s\n", strerror(errno));
 
   return dzi;
 }
