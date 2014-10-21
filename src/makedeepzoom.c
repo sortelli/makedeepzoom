@@ -32,6 +32,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <wand/MagickWand.h>
+#include "../config.h"
 
 #define DIR_MODE    S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH
 #define DZI_DIR_SFX "_files"
@@ -122,6 +123,7 @@ void set_app_name(char *argv0) {
 void usage(void) {
   fprintf(stderr, "usage: %s [OPTIONS] image [image, image, ...] \n", APP_NAME);
   fprintf(stderr, "  OPTIONS\n");
+  fprintf(stderr, "    -v             Print %s version.\n", APP_NAME);
   fprintf(stderr, "    -d             Enable debug output.\n");
   fprintf(stderr, "    -c <filename>  DeepZoom Collection (DZC) file to update with new DZI data.\n");
   fprintf(stderr, "    -t <integer>   DeepZoom Image (DZI) tile size.  Default is %d pixels.\n", DEFAULT_TILE_SIZE);
@@ -144,7 +146,7 @@ int main(int argc, char **argv) {
 
   set_app_name(*argv);
 
-  while ((opt = getopt(argc, argv, "xdc:t:a:f:n:m:o:")) != -1) {
+  while ((opt = getopt(argc, argv, "vxdc:t:a:f:n:m:o:")) != -1) {
     switch(opt) {
       case 'x': OPT_XML_EXT     = 1;            break;
       case 'd': OPT_DEBUG       = 1;            break;
@@ -155,6 +157,10 @@ int main(int argc, char **argv) {
       case 'n': OPT_DZC_START   = atoi(optarg); break;
       case 'm': OPT_DZC_DEPTH   = atoi(optarg); break;
       case 'o': OPT_DZI_OVERLAP = atoi(optarg); break;
+
+      case 'v':
+        printf("Version: %s v%s\n", APP_NAME, VERSION);
+        exit(0);
 
       case 'h':
         usage();
