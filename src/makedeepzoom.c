@@ -94,15 +94,21 @@ int dzi_zoom_depth(int width, int height);
 
 void change_aspect(double aspect, MagickWand *wand);
 
-int OPT_DEBUG     = 0;
-int OPT_XML_EXT   = 0;
-int OPT_DZC_DEPTH = 8;
-int OPT_DZC_START = 0;
-int OPT_TILE_SIZE = 256;
-int OPT_OVERLAP   = 1;
-double OPT_ASPECT = 0;
-char *OPT_FORMAT  = "jpg";
-char *OPT_DZC     = NULL;
+#define DEFAULT_TILE_SIZE   256
+#define DEFAULT_FORMAT      "jpg"
+#define DEFAULT_DZC_START   0
+#define DEFAULT_DZC_DEPTH   8
+#define DEFAULT_DZI_OVERLAP 1
+
+int OPT_DEBUG       = 0;
+int OPT_XML_EXT     = 0;
+int OPT_DZC_DEPTH   = DEFAULT_DZC_DEPTH;
+int OPT_DZC_START   = DEFAULT_DZC_START;
+int OPT_TILE_SIZE   = DEFAULT_TILE_SIZE;
+int OPT_DZI_OVERLAP = DEFAULT_DZI_OVERLAP;
+double OPT_ASPECT   = 0;
+char *OPT_FORMAT    = DEFAULT_FORMAT;
+char *OPT_DZC       = NULL;
 
 char *APP_NAME = NULL;
 
@@ -114,7 +120,22 @@ void set_app_name(char *argv0) {
 }
 
 void usage(void) {
-  fprintf(stderr, "usage: %s [OPTIONS] [image, image, ...] \n", APP_NAME);
+  fprintf(stderr, "usage: %s [OPTIONS] image [image, image, ...] \n", APP_NAME);
+  fprintf(stderr, "  OPTIONS\n");
+  fprintf(stderr, "    -d             Enable debug output.\n");
+  fprintf(stderr, "    -c <filename>  DeepZoom Collection (DZC) file to update with new DZI data.\n");
+  fprintf(stderr, "    -t <integer>   DeepZoom Image (DZI) tile size.  Default is %d pixels.\n", DEFAULT_TILE_SIZE);
+  fprintf(stderr, "    -a <double>    Force DeepZoom Image (DZI) aspect ratio (width / height) to a particular ratio.\n");
+  fprintf(stderr, "                   Default value is 0, which will use the original aspect ratio of each image.\n");
+  fprintf(stderr, "    -f (jpg|png)   Force DeepZoom Image (DZI) format. Default is '%s'.\n", DEFAULT_FORMAT);
+  fprintf(stderr, "    -n <integer>   Starting index for DeepZoom Collection (DZC) number. Default is %d.\n", DEFAULT_DZC_START);
+  fprintf(stderr, "    -m <integer>   Depth of DeepZoom Collection (DZC). Default is %d.\n", DEFAULT_DZC_DEPTH);
+  fprintf(stderr, "    -o <integer>   DeepZoom Image (DZI) overlap pixels. Default is %d.\n", DEFAULT_DZI_OVERLAP);
+  fprintf(stderr, "    -x             Use '.xml' file extension for DZI files. Default is '.dzi'.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "    image [image, ...]   List of image files to convert into DeepZoom Image (DZI) files.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "  Example usage: %s -c dzc/foo.dzc images/*.jpg\n", APP_NAME);
 }
 
 int main(int argc, char **argv) {
@@ -125,15 +146,15 @@ int main(int argc, char **argv) {
 
   while ((opt = getopt(argc, argv, "xdc:t:a:f:n:m:o:")) != -1) {
     switch(opt) {
-      case 'x': OPT_XML_EXT   = 1;            break;
-      case 'd': OPT_DEBUG     = 1;            break;
-      case 'c': OPT_DZC       = optarg;       break;
-      case 't': OPT_TILE_SIZE = atoi(optarg); break;
-      case 'a': OPT_ASPECT    = atof(optarg); break;
-      case 'f': OPT_FORMAT    = optarg;       break;
-      case 'n': OPT_DZC_START = atoi(optarg); break;
-      case 'm': OPT_DZC_DEPTH = atoi(optarg); break;
-      case 'o': OPT_OVERLAP   = atoi(optarg); break;
+      case 'x': OPT_XML_EXT     = 1;            break;
+      case 'd': OPT_DEBUG       = 1;            break;
+      case 'c': OPT_DZC         = optarg;       break;
+      case 't': OPT_TILE_SIZE   = atoi(optarg); break;
+      case 'a': OPT_ASPECT      = atof(optarg); break;
+      case 'f': OPT_FORMAT      = optarg;       break;
+      case 'n': OPT_DZC_START   = atoi(optarg); break;
+      case 'm': OPT_DZC_DEPTH   = atoi(optarg); break;
+      case 'o': OPT_DZI_OVERLAP = atoi(optarg); break;
 
       case 'h':
         usage();
@@ -145,15 +166,15 @@ int main(int argc, char **argv) {
     }
   }
 
-  debug("OPT_XML_EXT   = %d\n",   OPT_XML_EXT);
-  debug("OPT_DEBUG     = %d\n",   OPT_DEBUG);
-  debug("OPT_TILE_SIZE = %d\n",   OPT_TILE_SIZE);
-  debug("OPT_DZC_START = %d\n",   OPT_DZC_START);
-  debug("OPT_DZC_DEPTH = %d\n",   OPT_DZC_DEPTH);
-  debug("OPT_OVERLAP   = %d\n",   OPT_OVERLAP);
-  debug("OPT_DZC       = %s\n",   OPT_DZC    ? OPT_DZC    : "(NULL)");
-  debug("OPT_FORMAT    = %s\n",   OPT_FORMAT ? OPT_FORMAT : "(NULL)");
-  debug("OPT_ASPECT    = %.3f\n", OPT_ASPECT);
+  debug("OPT_XML_EXT     = %d\n",   OPT_XML_EXT);
+  debug("OPT_DEBUG       = %d\n",   OPT_DEBUG);
+  debug("OPT_TILE_SIZE   = %d\n",   OPT_TILE_SIZE);
+  debug("OPT_DZC_START   = %d\n",   OPT_DZC_START);
+  debug("OPT_DZC_DEPTH   = %d\n",   OPT_DZC_DEPTH);
+  debug("OPT_DZI_OVERLAP = %d\n",   OPT_DZI_OVERLAP);
+  debug("OPT_DZC         = %s\n",   OPT_DZC    ? OPT_DZC    : "(NULL)");
+  debug("OPT_FORMAT      = %s\n",   OPT_FORMAT ? OPT_FORMAT : "(NULL)");
+  debug("OPT_ASPECT      = %.3f\n", OPT_ASPECT);
 
   MagickWandGenesis();
 
@@ -163,7 +184,7 @@ int main(int argc, char **argv) {
   }
 
   for (; optind < argc; ++optind) {
-    DZI *dzi = dzi_new(argv[optind], NULL, OPT_TILE_SIZE, OPT_OVERLAP, OPT_FORMAT);
+    DZI *dzi = dzi_new(argv[optind], NULL, OPT_TILE_SIZE, OPT_DZI_OVERLAP, OPT_FORMAT);
 
     dzi_make_tiles(dzi, dzc);
     dzi_make_xml(dzi);
