@@ -477,8 +477,8 @@ void dzi_make_tiles(DZI *dzi, DZC *dzc) {
         snprintf(file, sizeof file, "%s/%d_%d.%s", dir, c, r, dzi->format);
 
         pt = y > 0;
-        pr = ((c + 1) * dzi->tile_size) < dzi->cur_width;
-        pb = ((r + 1) * dzi->tile_size) < dzi->cur_height;
+        pr = ((c + dzi->overlap) * dzi->tile_size) < dzi->cur_width;
+        pb = ((r + dzi->overlap) * dzi->tile_size) < dzi->cur_height;
         pl = x > 0;
 
         debug("tile %d_%d: [%d, %d, %d, %d], [%d, %d, %d, %d]\n", c, r, pt, pr, pb, pl,
