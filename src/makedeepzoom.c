@@ -71,6 +71,7 @@ typedef struct {
   int   next_item;
   int   morton_row;
   int   morton_col;
+  int   already_exists;
   FILE *tmp;
 } DZC;
 
@@ -82,6 +83,7 @@ void dzi_reduce(DZI *dzi);
 
 DZC *dzc_new(char *xml_path, int tile_size, char *format, int max_levels);
 void dzc_start_update(DZC *dzc);
+void dzc_check_for_existing_dzv(DZC *dzc);
 void dzc_add_dzi(DZC *dzc, DZI *dzi);
 void dzc_save(DZC *dzc);
 void dzc_destory(DZC *dzc);
@@ -97,14 +99,12 @@ void change_aspect(double aspect, MagickWand *wand);
 
 #define DEFAULT_TILE_SIZE   256
 #define DEFAULT_FORMAT      "jpg"
-#define DEFAULT_DZC_START   0
 #define DEFAULT_DZC_DEPTH   8
 #define DEFAULT_DZI_OVERLAP 1
 
 int OPT_DEBUG       = 0;
 int OPT_XML_EXT     = 0;
 int OPT_DZC_DEPTH   = DEFAULT_DZC_DEPTH;
-int OPT_DZC_START   = DEFAULT_DZC_START;
 int OPT_TILE_SIZE   = DEFAULT_TILE_SIZE;
 int OPT_DZI_OVERLAP = DEFAULT_DZI_OVERLAP;
 double OPT_ASPECT   = 0;
@@ -130,7 +130,6 @@ void usage(void) {
   fprintf(stderr, "    -a <double>    Force DeepZoom Image (DZI) aspect ratio (width / height) to a particular ratio.\n");
   fprintf(stderr, "                   Default value is 0, which will use the original aspect ratio of each image.\n");
   fprintf(stderr, "    -f (jpg|png)   Force DeepZoom Image (DZI) format. Default is '%s'.\n", DEFAULT_FORMAT);
-  fprintf(stderr, "    -n <integer>   Starting index for DeepZoom Collection (DZC) number. Default is %d.\n", DEFAULT_DZC_START);
   fprintf(stderr, "    -m <integer>   Depth of DeepZoom Collection (DZC). Default is %d.\n", DEFAULT_DZC_DEPTH);
   fprintf(stderr, "    -o <integer>   DeepZoom Image (DZI) overlap pixels. Default is %d.\n", DEFAULT_DZI_OVERLAP);
   fprintf(stderr, "    -x             Use '.xml' file extension for DZI files. Default is '.dzi'.\n");
@@ -154,7 +153,6 @@ int main(int argc, char **argv) {
       case 't': OPT_TILE_SIZE   = atoi(optarg); break;
       case 'a': OPT_ASPECT      = atof(optarg); break;
       case 'f': OPT_FORMAT      = optarg;       break;
-      case 'n': OPT_DZC_START   = atoi(optarg); break;
       case 'm': OPT_DZC_DEPTH   = atoi(optarg); break;
       case 'o': OPT_DZI_OVERLAP = atoi(optarg); break;
 
@@ -175,7 +173,6 @@ int main(int argc, char **argv) {
   debug("OPT_XML_EXT     = %d\n",   OPT_XML_EXT);
   debug("OPT_DEBUG       = %d\n",   OPT_DEBUG);
   debug("OPT_TILE_SIZE   = %d\n",   OPT_TILE_SIZE);
-  debug("OPT_DZC_START   = %d\n",   OPT_DZC_START);
   debug("OPT_DZC_DEPTH   = %d\n",   OPT_DZC_DEPTH);
   debug("OPT_DZI_OVERLAP = %d\n",   OPT_DZI_OVERLAP);
   debug("OPT_DZC         = %s\n",   OPT_DZC    ? OPT_DZC    : "(NULL)");
@@ -246,12 +243,13 @@ DZC *dzc_new(char *xml_path, int tile_size, char *format, int max_levels) {
   if (q)
     *q = '.';
 
-  dzc->tile_size  = tile_size;
-  dzc->levels     = max_levels;
-  dzc->tmp        = NULL;
-  dzc->next_item  = 0;
-  dzc->morton_row = 0;
-  dzc->morton_col = 0;
+  dzc->tile_size      = tile_size;
+  dzc->levels         = max_levels;
+  dzc->tmp            = NULL;
+  dzc->next_item      = 0;
+  dzc->morton_row     = 0;
+  dzc->morton_col     = 0;
+  dzc->already_exists = 0;
 
   if (!(dzc->format = strdup(format)))
     error("strdup() failed, reason: %s\n", strerror(errno));
@@ -280,14 +278,43 @@ void dzc_start_update(DZC *dzc) {
   if (!(dzc->tmp = tmpfile()))
     error("tmpfile() failed, reason: %s\n", strerror(errno));
 
-  dzc->next_item = OPT_DZC_START;
-
   make_dir(dzc->files_path);
 
   for (i = 0; i <= dzc->levels; ++i) {
     snprintf(dir, sizeof dir, "%s/%d", dzc->files_path, i);
     make_dir(dir);
   }
+
+  dzc_check_for_existing_dzv(dzc);
+}
+
+void dzc_check_for_existing_dzv(DZC *dzc) {
+  FILE *dzc_file;
+  char buf[8192];
+  char *p;
+
+
+  if (!(dzc_file = fopen(dzc->xml_path, "r")))
+    return;
+
+  while (fgets(buf, sizeof buf, dzc_file)) {
+    if ((p = strstr(buf, " NextItemId="))) {
+      p += strlen(" NextItemId=");
+
+      if (!p)
+        error("Unexpected end of line in \"%s\"\n", dzc->xml_path);
+
+      if (*p == '"' || *p == '\'')
+        ++p;
+
+      dzc->next_item      = atoi(p);
+      dzc->already_exists = dzc->next_item > 0;
+
+      break;
+    }
+  }
+
+  fclose(dzc_file);
 }
 
 void dzc_add_dzi(DZC *dzc, DZI *dzi) {
@@ -353,16 +380,60 @@ void dzc_save(DZC *dzc) {
   FILE *f;
   char buf[8192];
 
-  debug("writing %s\n", dzc->xml_path);
+  if (dzc->already_exists) {
+    FILE *prev_dzc;
+    char *p, *p_end;
 
-  if (!(f = fopen(dzc->xml_path, "w")))
-    error("fopen(\"%s\") failed, reason: %s\n", dzc->xml_path, strerror(errno));
+    debug("using existing dzc %s\n", dzc->xml_path);
 
-  fprintf(f, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-  fprintf(f, "<Collection MaxLevel=\"%d\" TileSize=\"%d\" "
-             "Format=\"%s\" NextItemId=\"%d\">\n",
-             dzc->levels, dzc->tile_size, dzc->format, dzc->next_item);
-  fprintf(f, "<Items>\n");
+    //open existing for reading, unlink file and create new dzc
+    if (!(prev_dzc = fopen(dzc->xml_path, "r")))
+      error("fopen(\"%s\") failed, reason: %s\n", dzc->xml_path, strerror(errno));
+
+    if (unlink(dzc->xml_path))
+      error("unlink(\"%s\") failed, reason: %s\n", dzc->xml_path, strerror(errno));
+
+    if (!(f = fopen(dzc->xml_path, "w")))
+      error("fopen(\"%s\") failed, reason: %s\n", dzc->xml_path, strerror(errno));
+
+    while (fgets(buf, sizeof buf, prev_dzc)) {
+      if ((p = strstr(buf, " NextItemId="))) {
+        *p = '\0';
+        p += strlen(" NextItemId=");
+
+        if (!p)
+          error("Unexpected end of line in \"%s\"\n", dzc->xml_path);
+
+        if (*p == '"' || *p == '\'') ++p;
+        while (*p != ' ' && *p != '>') ++p;
+
+        fprintf(f, "%s", buf);
+        fprintf(f, " NextItemId=\"%d\"%s", dzc->next_item, p);
+
+        continue;
+      }
+
+      if ((p_end = strstr(buf, "</Items>")))
+        *p_end = '\0';
+
+      fprintf(f, "%s", buf);
+
+      if (p_end)
+        break;
+    }
+  }
+  else {
+    debug("writing new dzc %s\n", dzc->xml_path);
+
+    if (!(f = fopen(dzc->xml_path, "w")))
+      error("fopen(\"%s\") failed, reason: %s\n", dzc->xml_path, strerror(errno));
+
+    fprintf(f, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    fprintf(f, "<Collection MaxLevel=\"%d\" TileSize=\"%d\" "
+               "Format=\"%s\" NextItemId=\"%d\">\n",
+               dzc->levels, dzc->tile_size, dzc->format, dzc->next_item);
+    fprintf(f, "<Items>\n");
+  }
 
   fflush(dzc->tmp);
   fseek(dzc->tmp, 0, SEEK_SET);
