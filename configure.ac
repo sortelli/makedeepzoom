@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.67])
-AC_INIT([makedeepzoom], [0.3.3dev], [joe@sortelli.com])
+AC_INIT([makedeepzoom], [0.4.0], [joe@sortelli.com])
 AM_INIT_AUTOMAKE([foreign -Wall -Werror])
 LT_INIT
 AC_CONFIG_MACRO_DIR([m4])
