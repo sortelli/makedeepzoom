@@ -37,7 +37,6 @@ To install to a specific directory:
         -a <double>    Force DeepZoom Image (DZI) aspect ratio (width / height) to a particular ratio.
                        Default value is 0, which will use the original aspect ratio of each image.
         -f (jpg|png)   Force DeepZoom Image (DZI) format. Default is 'jpg'.
-        -n <integer>   Starting index for DeepZoom Collection (DZC) number. Default is 0.
         -m <integer>   Depth of DeepZoom Collection (DZC). Default is 8.
         -o <integer>   DeepZoom Image (DZI) overlap pixels. Default is 1.
         -x             Use '.xml' file extension for DZI files. Default is '.dzi'.
@@ -60,7 +59,8 @@ To create one or more DZI images:
 
 ### Update existing DeepZoom Collection with a new image
 
-    % ./makedeppzoom -c dzc/collection.dzc -n <next_image_number> next_image.jpg
+    # If dzc/collection.dzc already exists, it will be updated
+    % ./makedeppzoom -c dzc/collection.dzc next_image.jpg
 
 ## License
 
